@@ -144,7 +144,7 @@ def combine_videos(video_paths: List[str], max_duration: int, max_clip_duration:
     """
     video_id = uuid.uuid4()
     combined_video_path = f"../temp/{video_id}.mp4"
-    
+
     #required duration of each clip:
     req_dur = max_duration / len(video_paths)
 
@@ -188,7 +188,7 @@ def combine_videos(video_paths: List[str], max_duration: int, max_clip_duration:
 
     final_clip = concatenate_videoclips(clips)
     final_clip = final_clip.set_fps(30)
-    final_clip.write_videofile(combined_video_path, threads=2)
+    final_clip.write_videofile(combined_video_path, threads=3)
 
     return combined_video_path
 
@@ -205,27 +205,36 @@ def generate_video(combined_video_path: str, tts_path: str, subtitles_path: str)
     Returns:
         str: The path to the final video.
     """
-    # Make a generator that returns a TextClip when called with consecutive
-    generator = lambda txt: TextClip(
-        txt,
-        font="../fonts/bold_font.ttf",
-        fontsize=100,
-        color="#FFFF00",
-        stroke_color="black",
-        stroke_width=5,
-    )
+    # Define a generator for subtitles styling
+    def subtitle_generator(txt: str) -> TextClip:
+       return TextClip(
+           txt,
+           font="../fonts/bold_font.ttf",
+           fontsize=100,
+           color="#FFFF00",
+           stroke_color="black",
+           stroke_width=5,
+       )
 
-    # Burn the subtitles into the video
-    subtitles = SubtitlesClip(subtitles_path, generator)
-    result = CompositeVideoClip([
-        VideoFileClip(combined_video_path),
-        subtitles.set_pos(("center", "center"))
-    ])
+    # Load the video
+    video_clip = VideoFileClip(combined_video_path)
 
-    # Add the audio
-    audio = AudioFileClip(tts_path)
-    result = result.set_audio(audio)
+    # Load the subtitles
+    subtitles_clip = SubtitlesClip(subtitles_path, subtitle_generator).set_position(('center', 'center'))
 
-    result.write_videofile("../temp/output.mp4", threads=2)
+    # Create a composite video clip with subtitles
+    video_with_subtitles = CompositeVideoClip([video_clip, subtitles_clip])
 
-    return "output.mp4"
+    # Load and attach the audio
+    audio_clip = AudioFileClip(tts_path)
+    final_clip = video_with_subtitles.set_audio(audio_clip)
+
+    # Ensure audio is synced and covers the full video duration
+    final_audio = final_clip.audio.set_duration(final_clip.duration)
+    final_clip = final_clip.set_audio(final_audio)
+
+    # Output file path
+    output_path = "../temp/final_output.mp4"
+    final_clip.write_videofile(output_path, codec='libx264', audio_codec='aac', threads=4)
+
+    return "final_output.mp4"
