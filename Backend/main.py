@@ -13,7 +13,8 @@ from youtube import upload_video
 from apiclient.errors import HttpError
 from flask import Flask, request, jsonify
 from moviepy.config import change_settings
-
+from huggingface import HuggingFace
+from imagegenerator import *
 
 # Load environment variables
 load_dotenv("../.env")
@@ -79,7 +80,6 @@ def generate():
         print(colored("   Custom Prompt: " + data["customPrompt"], "blue"))  # Print the AI model being used
 
 
-
         if not GENERATING:
             return jsonify(
                 {
@@ -88,7 +88,7 @@ def generate():
                     "data": [],
                 }
             )
-        
+
         voice = data["voice"]
         voice_prefix = voice[:2]
 
@@ -146,7 +146,7 @@ def generate():
                     "data": [],
                 }
             )
-            
+
         # Define video_paths
         video_paths = []
 
@@ -227,8 +227,7 @@ def generate():
         except Exception as e:
             print(colored(f"[-] Error generating final video: {e}", "red"))
             final_video_path = None
-
-        # Define metadata for the video, we will display this to the user, and use it for the YouTube upload
+# Define metadata for the video, we will display this to the user, and use it for the YouTube upload
         title, description, keywords = generate_metadata(data["videoSubject"], script, ai_model)
 
         print(colored("[-] Metadata for YouTube upload:", "blue"))
@@ -238,7 +237,6 @@ def generate():
         print(colored(f"   {description}", "blue"))
         print(colored("   Keywords: ", "blue"))
         print(colored(f"  {', '.join(keywords)}", "blue"))
-
         if automate_youtube_upload:
             # Start Youtube Uploader
             # Check if the CLIENT_SECRETS_FILE exists
@@ -254,6 +252,7 @@ def generate():
                 # Choose the appropriate category ID for your videos
                 video_category_id = "28"  # Science & Technology
                 privacyStatus = "private"  # "public", "private", "unlisted"
+                print(colored("Before meta data", "blue"))
                 video_metadata = {
                     'video_path': os.path.abspath(f"../temp/{final_video_path}"),
                     'title': title,
@@ -300,7 +299,6 @@ def generate():
         else:
             video_clip.write_videofile(f"../{final_video_path}", threads=n_threads or 1)
 
-
         # Let user know
         print(colored(f"[+] Video generated: {final_video_path}!", "green"))
 
@@ -333,6 +331,30 @@ def generate():
         )
 
 
+@app.route("/api/models", methods=["POST"])
+def model():
+    try:
+        generate_image("A photo of a cat astronaut")
+
+        print(colored("[+] Models retrieved!", "green"))
+        return jsonify(
+            {
+                "status": "success",
+                "message": "Models retrieved!",
+                "data": "Image Generated",
+            }
+        )
+    except Exception as e:
+        print(colored(f"[-] Error: {e}", "red"))
+        return jsonify(
+            {
+                "status": "error",
+                "message": "Could not retrieve models.",
+                "data": [],
+            }
+        )
+
+
 @app.route("/api/cancel", methods=["POST"])
 def cancel():
     print(colored("[!] Received cancellation request...", "yellow"))
@@ -344,6 +366,5 @@ def cancel():
 
 
 if __name__ == "__main__":
-
     # Run Flask App
     app.run(debug=True, host=HOST, port=PORT)

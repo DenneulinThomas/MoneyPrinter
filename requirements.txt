@@ -16,5 +16,9 @@ assemblyai
 brotli
 google-api-python-client 
 oauth2client
+transformers
+torch
+torchvision
+diffusers
 openai
 google-generativeai
