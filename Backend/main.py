@@ -47,10 +47,13 @@ def generate():
         clean_dir("../temp/")
         clean_dir("../subtitles/")
 
+
         # Parse JSON
         data = request.get_json()
         paragraph_number = int(data.get('paragraphNumber', 1))  # Default to 1 if not provided
         ai_model = data.get('aiModel')  # Get the AI model selected by the user
+        n_threads = data.get('threads')  # Amount of threads to use for video generation
+        subtitles_position = data.get('subtitlesPosition')  # Position of the subtitles in the video
 
         # Get 'useMusic' from the request data and default to False if not provided
         use_music = data.get('useMusic', False)
@@ -74,6 +77,8 @@ def generate():
         print(colored("[Video to be generated]", "blue"))
         print(colored("   Subject: " + data["videoSubject"], "blue"))
         print(colored("   AI Model: " + ai_model, "blue"))  # Print the AI model being used
+        print(colored("   Custom Prompt: " + data["customPrompt"], "blue"))  # Print the AI model being used
+
 
         if not GENERATING:
             return jsonify(
@@ -84,14 +89,18 @@ def generate():
                 }
             )
 
-        # Generate a script
-        script = generate_script(data["videoSubject"], paragraph_number,
-                                 ai_model)  # Pass the AI model to the script generation
         voice = data["voice"]
+        voice_prefix = voice[:2]
+
 
         if not voice:
             print(colored("[!] No voice was selected. Defaulting to \"en_us_001\"", "yellow"))
             voice = "en_us_001"
+            voice_prefix = voice[:2]
+
+
+        # Generate a script
+        script = generate_script(data["videoSubject"], paragraph_number, ai_model, voice, data["customPrompt"])  # Pass the AI model to the script generation
 
         # Generate search terms
         search_terms = get_search_terms(
@@ -125,6 +134,18 @@ def generate():
             for url in found_urls:
                 if url not in video_urls:
                     video_urls.append(url)
+                    break
+
+        # Check if video_urls is empty
+        if not video_urls:
+            print(colored("[-] No videos found to download.", "red"))
+            return jsonify(
+                {
+                    "status": "error",
+                    "message": "No videos found to download.",
+                    "data": [],
+                }
+            )
 
         # Define video_paths
         video_paths = []
@@ -191,23 +212,31 @@ def generate():
         final_audio.write_audiofile(tts_path)
 
         try:
-            subtitles_path = generate_subtitles(audio_path=tts_path, sentences=sentences, audio_clips=paths)
+            subtitles_path = generate_subtitles(audio_path=tts_path, sentences=sentences, audio_clips=paths, voice=voice_prefix)
         except Exception as e:
             print(colored(f"[-] Error generating subtitles: {e}", "red"))
             subtitles_path = None
 
         # Concatenate videos
         temp_audio = AudioFileClip(tts_path)
-        print(video_paths)
-        combined_video_path = combine_videos(video_paths, temp_audio.duration, 5)
+        combined_video_path = combine_videos(video_paths, temp_audio.duration, 5, n_threads or 2)
 
         # Put everything together
         try:
-            final_video_path = generate_video(combined_video_path, tts_path, subtitles_path)
+            final_video_path = generate_video(combined_video_path, tts_path, subtitles_path, n_threads or 2, subtitles_position)
         except Exception as e:
             print(colored(f"[-] Error generating final video: {e}", "red"))
             final_video_path = None
+# Define metadata for the video, we will display this to the user, and use it for the YouTube upload
+        title, description, keywords = generate_metadata(data["videoSubject"], script, ai_model)
 
+        print(colored("[-] Metadata for YouTube upload:", "blue"))
+        print(colored("   Title: ", "blue"))
+        print(colored(f"   {title}", "blue"))
+        print(colored("   Description: ", "blue"))
+        print(colored(f"   {description}", "blue"))
+        print(colored("   Keywords: ", "blue"))
+        print(colored(f"  {', '.join(keywords)}", "blue"))
         if automate_youtube_upload:
             # Start Youtube Uploader
             # Check if the CLIENT_SECRETS_FILE exists
@@ -216,23 +245,10 @@ def generate():
             if not os.path.exists(client_secrets_file):
                 SKIP_YT_UPLOAD = True
                 print(colored("[-] Client secrets file missing. YouTube upload will be skipped.", "yellow"))
-                print(colored(
-                    "[-] Please download the client_secret.json from Google Cloud Platform and store this inside the /Backend directory.",
-                    "red"))
+                print(colored("[-] Please download the client_secret.json from Google Cloud Platform and store this inside the /Backend directory.", "red"))
 
             # Only proceed with YouTube upload if the toggle is True  and client_secret.json exists.
             if not SKIP_YT_UPLOAD:
-                # Define metadata for the video
-                title, description, keywords = generate_metadata(data["videoSubject"], script, ai_model)
-
-                print(colored("[-] Metadata for YouTube upload:", "blue"))
-                print(colored("   Title: ", "blue"))
-                print(colored(f"   {title}", "blue"))
-                print(colored("   Description: ", "blue"))
-                print(colored(f"   {description}", "blue"))
-                print(colored("   Keywords: ", "blue"))
-                print(colored(f"  {', '.join(keywords)}", "blue"))
-
                 # Choose the appropriate category ID for your videos
                 video_category_id = "28"  # Science & Technology
                 privacyStatus = "private"  # "public", "private", "unlisted"
@@ -248,7 +264,6 @@ def generate():
 
                 # Upload the video to YouTube
                 try:
-                    print(colored("[+] Uploading video to YouTube...", "green"))
                     # Unpack the video_metadata dictionary into individual arguments
                     video_response = upload_video(
                         video_path=video_metadata['video_path'],
@@ -262,12 +277,12 @@ def generate():
                 except HttpError as e:
                     print(f"An HTTP error {e.resp.status} occurred:\n{e.content}")
 
+        video_clip = VideoFileClip(f"../temp/{final_video_path}")
         if use_music:
             # Select a random song
             song_path = choose_random_song()
 
             # Add song to video at 30% volume using moviepy
-            video_clip = VideoFileClip(f"../temp/{final_video_path}")
             original_duration = video_clip.duration
             original_audio = video_clip.audio
             song_clip = AudioFileClip(song_path).set_fps(44100)
@@ -280,7 +295,9 @@ def generate():
             video_clip = video_clip.set_audio(comp_audio)
             video_clip = video_clip.set_fps(30)
             video_clip = video_clip.set_duration(original_duration)
-            video_clip.write_videofile(f"../{final_video_path}", threads=2)
+            video_clip.write_videofile(f"../{final_video_path}", threads=n_threads or 1)
+        else:
+            video_clip.write_videofile(f"../{final_video_path}", threads=n_threads or 1)
 
         # Let user know
         print(colored(f"[+] Video generated: {final_video_path}!", "green"))

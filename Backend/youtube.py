@@ -1,17 +1,16 @@
-#!/usr/bin/python
-
-import httplib2
 import os
-import random
 import sys
 import time
+import random
+import httplib2
 
+from termcolor import colored
+from oauth2client.file import Storage
 from apiclient.discovery import build
 from apiclient.errors import HttpError
 from apiclient.http import MediaFileUpload
-from oauth2client.client import flow_from_clientsecrets
-from oauth2client.file import Storage
 from oauth2client.tools import argparser, run_flow
+from oauth2client.client import flow_from_clientsecrets
 
 # Explicitly tell the underlying HTTP transport library not to retry, since
 # we are handling retry logic ourselves.
@@ -38,8 +37,8 @@ CLIENT_SECRETS_FILE = "./client_secret.json"
 SCOPES = ['https://www.googleapis.com/auth/youtube.upload',
           'https://www.googleapis.com/auth/youtube',
           'https://www.googleapis.com/auth/youtubepartner']
-YOUTUBE_API_SERVICE_NAME = "youtube"
-YOUTUBE_API_VERSION = "v3"
+YOUTUBE_API_SERVICE_NAME = "youtube"  
+YOUTUBE_API_VERSION = "v3"  
 
 # This variable defines a message to display if the CLIENT_SECRETS_FILE is
 # missing.
@@ -48,8 +47,8 @@ WARNING: Please configure OAuth 2.0
 
 To make this sample run you will need to populate the client_secrets.json file
 found at:
-
-   {os.path.abspath(os.path.join(os.path.dirname(__file__), CLIENT_SECRETS_FILE))}
+  
+{os.path.abspath(os.path.join(os.path.dirname(__file__), CLIENT_SECRETS_FILE))}
 
 with information from the API Console
 https://console.cloud.google.com/
@@ -58,15 +57,19 @@ For more information about the client_secrets.json file format, please visit:
 https://developers.google.com/api-client-library/python/guide/aaa_client_secrets
 """
 
-VALID_PRIVACY_STATUSES = ("public", "private", "unlisted")
-
-
+VALID_PRIVACY_STATUSES = ("public", "private", "unlisted")  
+  
+  
 def get_authenticated_service():
-    print("Authenticating...")
+    """
+    This method retrieves the YouTube service.
+
+    Returns:
+        any: The authenticated YouTube service.
+    """
     flow = flow_from_clientsecrets(CLIENT_SECRETS_FILE,
                                    scope=SCOPES,
                                    message=MISSING_CLIENT_SECRETS_MESSAGE)
-    print("Flow created...")
 
     storage = Storage(f"{sys.argv[0]}-oauth2.json")
     credentials = storage.get()
@@ -74,13 +77,22 @@ def get_authenticated_service():
     if credentials is None or credentials.invalid:
         flags = argparser.parse_args()
         credentials = run_flow(flow, storage, flags)
-        print("Credentials created...")
 
     return build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION,
                  http=credentials.authorize(httplib2.Http()))
 
+def initialize_upload(youtube: any, options: dict):
+    """
+    This method uploads a video to YouTube.
 
-def initialize_upload(youtube, options):
+    Args:
+        youtube (any): The authenticated YouTube service.
+        options (dict): The options to upload the video with.
+
+    Returns:
+        response: The response from the upload process.
+    """
+
     tags = None
     if options['keywords']:
         tags = options['keywords'].split(",")
@@ -108,16 +120,23 @@ def initialize_upload(youtube, options):
 
     return resumable_upload(insert_request)
 
+def resumable_upload(insert_request: MediaFileUpload):
+    """
+    This method implements an exponential backoff strategy to resume a  
+    failed upload.
 
-# This method implements an exponential backoff strategy to resume a
-# failed upload.
-def resumable_upload(insert_request):
+    Args:
+        insert_request (MediaFileUpload): The request to insert the video.
+
+    Returns:
+        response: The response from the upload process.
+    """
     response = None
     error = None
     retry = 0
     while response is None:
         try:
-            print("Uploading file...")
+            print(colored(" => Uploading file...", "magenta"))
             status, response = insert_request.next_chunk()
             if 'id' in response:
                 print(f"Video id '{response['id']}' was successfully uploaded.")
@@ -131,17 +150,16 @@ def resumable_upload(insert_request):
             error = f"A retriable error occurred: {e}"
 
         if error is not None:
-            print(error)
+            print(colored(error, "red"))
             retry += 1
             if retry > MAX_RETRIES:
                 raise Exception("No longer attempting to retry.")
 
-            max_sleep = 2 ** retry
+            max_sleep = 2 ** retry 
             sleep_seconds = random.random() * max_sleep
-            print(f"Sleeping {sleep_seconds} seconds and then retrying...")
-            time.sleep(sleep_seconds)
-
-
+            print(colored(f" => Sleeping {sleep_seconds} seconds and then retrying...", "blue"))
+            time.sleep(sleep_seconds)  
+  
 def upload_video(video_path, title, description, category, keywords, privacy_status):
     try:
         # Get the authenticated YouTube service
@@ -150,24 +168,23 @@ def upload_video(video_path, title, description, category, keywords, privacy_sta
         # Retrieve and print the channel ID for the authenticated user
         channels_response = youtube.channels().list(mine=True, part='id').execute()
         for channel in channels_response['items']:
-            print(f"Channel ID: {channel['id']}")  # This will print out the channel ID(s)
+            print(colored(f" => Channel ID: {channel['id']}", "blue"))
 
         # Initialize the upload process
         video_response = initialize_upload(youtube, {
-            'file': video_path,  # The path to the video file
+            'file': video_path, # The path to the video file
             'title': title,
             'description': description,
-            'category': category,
+            'category': category, 
             'keywords': keywords,
             'privacyStatus': privacy_status
         })
-        return video_response  # Return the response from the upload process
+        return video_response # Return the response from the upload process
     except HttpError as e:
-        print(f"An HTTP error {e.resp.status} occurred:\n{e.content}")
+        print(colored(f"[-] An HTTP error {e.resp.status} occurred:\n{e.content}", "red"))
         if e.resp.status in [401, 403]:
-            print("The credentials are invalid or expired, let's refresh them and try the upload again.")
-            # Here you could refresh the credentials and retry the upload
-            youtube = get_authenticated_service()  # This will prompt for re-authentication if necessary
+            # Here you could refresh the credentials and retry the upload  
+            youtube = get_authenticated_service() # This will prompt for re-authentication if necessary
             video_response = initialize_upload(youtube, {
                 'file': video_path,
                 'title': title,
@@ -178,7 +195,4 @@ def upload_video(video_path, title, description, category, keywords, privacy_sta
             })
             return video_response
         else:
-            raise e  # Re-raise the exception to handle it elsewhere
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        raise e
+            raise e 
