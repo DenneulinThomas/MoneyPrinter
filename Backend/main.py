@@ -9,11 +9,12 @@ from tiktokvoice import *
 from flask_cors import CORS
 from termcolor import colored
 from dotenv import load_dotenv
-from youtube import upload_video 
-from apiclient.errors import HttpError   
+from youtube import upload_video
+from apiclient.errors import HttpError
 from flask import Flask, request, jsonify
 from moviepy.config import change_settings
-
+from huggingface import HuggingFace
+from imagegenerator import *
 
 # Load environment variables
 load_dotenv("../.env")
@@ -46,7 +47,6 @@ def generate():
         clean_dir("../temp/")
         clean_dir("../subtitles/")
 
-        
         # Parse JSON
         data = request.get_json()
         paragraph_number = int(data.get('paragraphNumber', 1))  # Default to 1 if not provided
@@ -60,7 +60,7 @@ def generate():
 
         # Get the ZIP Url of the songs
         songs_zip_url = data.get('zipUrl')
-        
+
         # Download songs
         if use_music:
             # Downloads a ZIP file containing popular TikTok Songs
@@ -75,7 +75,6 @@ def generate():
         print(colored("   Subject: " + data["videoSubject"], "blue"))
         print(colored("   AI Model: " + ai_model, "blue"))  # Print the AI model being used
 
-
         if not GENERATING:
             return jsonify(
                 {
@@ -86,7 +85,8 @@ def generate():
             )
 
         # Generate a script
-        script = generate_script(data["videoSubject"], paragraph_number, ai_model)  # Pass the AI model to the script generation
+        script = generate_script(data["videoSubject"], paragraph_number,
+                                 ai_model)  # Pass the AI model to the script generation
         voice = data["voice"]
 
         if not voice:
@@ -207,7 +207,7 @@ def generate():
         except Exception as e:
             print(colored(f"[-] Error generating final video: {e}", "red"))
             final_video_path = None
-        
+
         if automate_youtube_upload:
             # Start Youtube Uploader
             # Check if the CLIENT_SECRETS_FILE exists
@@ -216,12 +216,14 @@ def generate():
             if not os.path.exists(client_secrets_file):
                 SKIP_YT_UPLOAD = True
                 print(colored("[-] Client secrets file missing. YouTube upload will be skipped.", "yellow"))
-                print(colored("[-] Please download the client_secret.json from Google Cloud Platform and store this inside the /Backend directory.", "red"))
+                print(colored(
+                    "[-] Please download the client_secret.json from Google Cloud Platform and store this inside the /Backend directory.",
+                    "red"))
 
             # Only proceed with YouTube upload if the toggle is True  and client_secret.json exists.
             if not SKIP_YT_UPLOAD:
                 # Define metadata for the video
-                title, description, keywords = generate_metadata(data["videoSubject"], script, ai_model)  
+                title, description, keywords = generate_metadata(data["videoSubject"], script, ai_model)
 
                 print(colored("[-] Metadata for YouTube upload:", "blue"))
                 print(colored("   Title: ", "blue"))
@@ -234,6 +236,7 @@ def generate():
                 # Choose the appropriate category ID for your videos
                 video_category_id = "28"  # Science & Technology
                 privacyStatus = "private"  # "public", "private", "unlisted"
+                print(colored("Before meta data", "blue"))
                 video_metadata = {
                     'video_path': os.path.abspath(f"../temp/{final_video_path}"),
                     'title': title,
@@ -245,6 +248,7 @@ def generate():
 
                 # Upload the video to YouTube
                 try:
+                    print(colored("[+] Uploading video to YouTube...", "green"))
                     # Unpack the video_metadata dictionary into individual arguments
                     video_response = upload_video(
                         video_path=video_metadata['video_path'],
@@ -278,7 +282,6 @@ def generate():
             video_clip = video_clip.set_duration(original_duration)
             video_clip.write_videofile(f"../{final_video_path}", threads=2)
 
-
         # Let user know
         print(colored(f"[+] Video generated: {final_video_path}!", "green"))
 
@@ -311,6 +314,30 @@ def generate():
         )
 
 
+@app.route("/api/models", methods=["POST"])
+def model():
+    try:
+        generate_image("A photo of a cat astronaut")
+
+        print(colored("[+] Models retrieved!", "green"))
+        return jsonify(
+            {
+                "status": "success",
+                "message": "Models retrieved!",
+                "data": "Image Generated",
+            }
+        )
+    except Exception as e:
+        print(colored(f"[-] Error: {e}", "red"))
+        return jsonify(
+            {
+                "status": "error",
+                "message": "Could not retrieve models.",
+                "data": [],
+            }
+        )
+
+
 @app.route("/api/cancel", methods=["POST"])
 def cancel():
     print(colored("[!] Received cancellation request...", "yellow"))
@@ -322,6 +349,5 @@ def cancel():
 
 
 if __name__ == "__main__":
-
     # Run Flask App
     app.run(debug=True, host=HOST, port=PORT)

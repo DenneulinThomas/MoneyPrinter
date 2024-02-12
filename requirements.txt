@@ -17,3 +17,7 @@ brotli
 google-api-python-client 
 oauth2client
 openai==0.28
+transformers
+torch
+torchvision
+diffusers

@@ -16,6 +16,7 @@ from moviepy.video.tools.subtitles import SubtitlesClip
 load_dotenv("../.env")
 
 ASSEMBLY_AI_API_KEY = os.getenv("ASSEMBLY_AI_API_KEY")
+thread_count=os.cpu_count()
 
 
 def save_video(video_url: str, directory: str = "../temp") -> str:
@@ -188,7 +189,7 @@ def combine_videos(video_paths: List[str], max_duration: int, max_clip_duration:
 
     final_clip = concatenate_videoclips(clips)
     final_clip = final_clip.set_fps(30)
-    final_clip.write_videofile(combined_video_path, threads=3)
+    final_clip.write_videofile(combined_video_path, threads=thread_count)
 
     return combined_video_path
 
@@ -235,6 +236,6 @@ def generate_video(combined_video_path: str, tts_path: str, subtitles_path: str)
 
     # Output file path
     output_path = "../temp/final_output.mp4"
-    final_clip.write_videofile(output_path, codec='libx264', audio_codec='aac', threads=4)
+    final_clip.write_videofile(output_path, codec='libx264', audio_codec='aac', threads=thread_count)
 
     return "final_output.mp4"

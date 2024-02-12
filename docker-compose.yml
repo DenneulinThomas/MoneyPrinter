@@ -20,10 +20,11 @@ services:
     volumes:
       - ./files:/temp
     environment:
-      - ASSEMBLY_AI_API_KEY=
-      - TIKTOK_SESSION_ID=
+      - ASSEMBLY_AI_API_KEY=e0c73a45eef24281b7c3fc6f3756a787
+      - TIKTOK_SESSION_ID=d18cfa90-2d2d-461b-83d7-18786f9abe3d
       - IMAGEMAGICK_BINARY=/usr/local/bin/magick
-      - PEXELS_API_KEY=
+      - PEXELS_API_KEY=AfzyRjzC601SpzC600IBmSdh71lXxOU83jNAETPfETBS0nWXTY8usOIm
+      - OPENAI_API_KEY=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
     depends_on:
       - frontend
     restart: always
